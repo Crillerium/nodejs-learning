@@ -1,0 +1,54 @@
+name: Build Flutter SDK for Raspberry Pi
+
+on:
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-flutter-sdk:
+    runs-on: ubuntu-latest-arm64  # 使用 ARM64 架构的 runner
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git clang cmake ninja-build pkg-config \
+          libgtk-3-dev liblzma-dev libstdc++-12-dev
+        
+    - name: Clone Flutter repository
+      run: |
+        git clone https://github.com/flutter/flutter.git --depth 1 -b stable
+        
+    - name: Build Flutter SDK
+      run: |
+        cd flutter
+        # 设置构建环境变量
+        export PATH="$PATH:$(pwd)/bin"
+        export FLUTTER_ENGINE_VERSION=$(cat bin/internal/engine.version)
+        
+        # 编译 Linux ARM64 版本
+        ./bin/flutter --version
+        ./bin/flutter config --enable-linux-desktop
+        ./bin/flutter precache --linux --android --web
+        
+        # 构建引擎 (关键步骤)
+        ./tools/gn --linux --linux-cpu arm64 --runtime-mode release
+        ninja -C out/linux_release_arm64
+        
+    - name: Package SDK
+      run: |
+        # 创建精简版SDK包 (排除.git等无用文件)
+        tar -czf flutter_sdk_arm64.tar.gz \
+          --exclude='flutter/.git' \
+          --exclude='flutter/bin/cache' \
+          flutter
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: flutter-sdk-arm64
+        path: flutter_sdk_arm64.tar.gz
+        retention-days: 1  # 自动清理旧包节省空间
